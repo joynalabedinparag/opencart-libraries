@@ -1,0 +1,66 @@
+<modification>
+  <id>Related Options</id>
+	<version>1.0.1b</version>
+	<vqmver>2.X</vqmver>
+	<author>Support: support@liveopencart.com</author>
+	<file name="catalog/controller/checkout/success.php">
+		<!-- not required -->
+		<operation error="log">
+			<search position="after"><![CDATA[
+			public function index() {
+			]]></search>
+			<add><![CDATA[
+			if($this->customer->getId()) {
+
+				$this->load->library('EPOSNow');
+				$this->load->model('account/customer');
+				$this->load->model('account/address');
+				$this->load->model('account/order');
+				$this->load->model('catalog/product');
+				$customer_id = $this->customer->getId();
+				$order_id = $this->session->data['order_id'];
+
+				if($order_id) {
+					$customer_info = $this->model_account_customer->getCustomer($customer_id);
+					$customer_address = $this->model_account_address->getAddresses();
+					$customer_order = $this->model_account_order->getOrder($order_id);
+					$customer_order_products = $this->model_account_order->getOrderProducts($order_id);
+					$customer_order_product_details = array();
+					if(!empty($customer_order_products)) {
+						foreach($customer_order_products as $cop) {
+							$product_details = array('order_quantity' => $cop['quantity'], 'order_price' => $cop['total'], 'order_tax' => $cop['tax']);
+							$product_details = array_merge($product_details, $this->model_catalog_product->getProduct($cop['product_id']));
+							$customer_order_product_details[] = $product_details;
+						}
+					}
+
+					$epos = EPOSNow::get_instance($this->registry);
+					$customer = $epos->AddNewCustomer($customer_info);
+					$epos_customer_id = json_decode($customer['result'], true)['CustomerID']; //test : 1690396
+					$customer_order = array_merge($customer_order, array("epos_customer_id" => $epos_customer_id));
+					$transaction = $epos->AddNewTransaction($customer_order);
+					$epos_transaction_id = json_decode($transaction['result'], true)['TransactionID']; //test : 145308691
+					$transaction_item_data = array('epos_transaction_id' => $epos_transaction_id);
+					$transaction_item = array();
+					$update_stock = array();
+					foreach($customer_order_product_details as $copd) {
+						$transaction_item_data = array_merge($transaction_item_data, $copd);
+						$transaction_item[] = $epos->AddNewTransactionItem($transaction_item_data);
+						$update_stock[] = $epos->UpdateProductStock ($transaction_item_data);
+					}
+                    
+				} else {
+					 echo "No Order Id Found";
+				}
+			} else {
+				 echo "Customer Not Logged In";
+			}
+            
+			]]>
+			</add>
+		</operation>
+	</file>
+
+
+
+</modification>
